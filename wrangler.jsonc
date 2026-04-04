@@ -1,0 +1,20 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "cloud-config-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-04-04",
+  "workers_dev": true,
+  "vars": {
+    "APP_NAME": "Cloud Config API",
+    "MAX_CONFIG_BYTES": "262144"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "cloud_config_db",
+      "database_id": "5ff07c66-0cf2-418e-8487-8ab226237e3e",
+      "preview_database_id": "cloud-config-db-local",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

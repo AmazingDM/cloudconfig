@@ -1,0 +1,32 @@
+{
+  "name": "cloud-config-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "基于 Cloudflare Workers 与 D1 的软件配置导入导出 API 服务",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "hash:api-key": "tsx scripts/hash-api-key.ts",
+    "d1:migrate:local": "wrangler d1 migrations apply DB --local",
+    "d1:migrate:remote": "wrangler d1 migrations apply DB --remote"
+  },
+  "dependencies": {
+    "hono": "^4.10.1",
+    "zod": "^4.1.11"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260320.0",
+    "@types/node": "^24.7.2",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4",
+    "wrangler": "^4.39.0"
+  }
+}
