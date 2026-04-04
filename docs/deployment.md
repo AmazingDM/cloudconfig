@@ -342,7 +342,7 @@ curl -X POST http://127.0.0.1:8787/api/v1/config/import ^
 当本地验证通过后，执行：
 
 ```bash
-pnpm deploy
+pnpm deploy:worker
 ```
 
 部署成功后，Wrangler 会输出 Worker 的可访问地址。
@@ -424,7 +424,7 @@ pnpm d1:migrate:remote
 ### 6.3 部署 Worker
 
 ```bash
-pnpm deploy
+pnpm deploy:worker
 ```
 
 ### 6.4 发布后抽样验证
@@ -590,5 +590,5 @@ pnpm dev
 ### 正式部署
 
 ```bash
-pnpm deploy
+pnpm deploy:worker
 ```

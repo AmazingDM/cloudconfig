@@ -70,7 +70,7 @@ pnpm d1:migrate:remote
 ### 2. 部署 Worker
 
 ```bash
-pnpm deploy
+pnpm deploy:worker
 ```
 
 ## 初始化客户端应用

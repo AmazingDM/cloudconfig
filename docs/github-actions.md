@@ -192,7 +192,7 @@ Cloudflare 官方说明：
 执行：
 
 ```bash
-pnpm deploy
+pnpm deploy:worker
 ```
 
 这一步本质上是运行：
