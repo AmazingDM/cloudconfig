@@ -6,6 +6,6 @@ insert into client_apps (
 ) values (
   'desktop-client',
   '桌面客户端',
-  'replace-with-sha256-hash',
+  'c2ad8203e633ecc587e4488a27d0b3f72f3439ad48980a5f2c8b1b6668240250',
   'active'
 );
