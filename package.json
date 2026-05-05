@@ -2,6 +2,7 @@
   "name": "cloud-config-api",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@10.31.0",
   "type": "module",
   "description": "基于 Cloudflare Workers 与 D1 的软件配置导入导出 API 服务",
   "engines": {
