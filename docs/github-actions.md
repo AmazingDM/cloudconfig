@@ -4,8 +4,8 @@
 
 当前仓库已经包含以下工作流：
 
-- [CI 工作流](/I:/Sora/CloudConfig/.github/workflows/ci.yml)
-- [自动部署工作流](/I:/Sora/CloudConfig/.github/workflows/deploy.yml)
+- [CI 工作流](../.github/workflows/ci.yml)
+- [自动部署工作流](../.github/workflows/deploy.yml)
 
 ---
 
@@ -15,7 +15,7 @@
 
 文件：
 
-- [ci.yml](/I:/Sora/CloudConfig/.github/workflows/ci.yml)
+- [ci.yml](../.github/workflows/ci.yml)
 
 触发条件：
 
@@ -37,7 +37,7 @@
 
 文件：
 
-- [deploy.yml](/I:/Sora/CloudConfig/.github/workflows/deploy.yml)
+- [deploy.yml](../.github/workflows/deploy.yml)
 
 触发条件：
 
@@ -59,7 +59,24 @@
 
 ---
 
-## 2. 需要配置的 GitHub Secrets
+## 2. 分支前提
+
+当前两个 workflow 文件都把 `main` 作为主分支：
+
+```yaml
+push:
+  branches:
+    - main
+```
+
+如果你的 GitHub 仓库默认分支是 `master` 或其他名称，需要先做二选一：
+
+- 把仓库默认分支切换/重命名为 `main`。
+- 或修改 `.github/workflows/ci.yml` 和 `.github/workflows/deploy.yml` 中的分支名。
+
+否则推送到默认分支后，CI 或自动部署可能不会触发。
+
+## 3. 需要配置的 GitHub Secrets
 
 在 GitHub 仓库中进入：
 
@@ -98,11 +115,11 @@ Cloudflare 官方说明：
 
 ---
 
-## 3. 推荐的 GitHub 配置方式
+## 4. 推荐的 GitHub 配置方式
 
 建议启用以下仓库策略：
 
-### 3.1 保护 `main` 分支
+### 4.1 保护 `main` 分支
 
 建议在 GitHub 中为 `main` 分支启用：
 
@@ -115,9 +132,9 @@ Cloudflare 官方说明：
 - 未通过测试的代码无法进入生产部署链路
 - 自动部署只会发生在通过审核并合并后的代码上
 
-### 3.2 使用 `production` Environment
+### 4.2 使用 `production` Environment
 
-当前 [deploy.yml](/I:/Sora/CloudConfig/.github/workflows/deploy.yml) 中使用了：
+当前 [deploy.yml](../.github/workflows/deploy.yml) 中使用了：
 
 ```yaml
 environment: production
@@ -133,7 +150,7 @@ environment: production
 
 ---
 
-## 4. 自动部署链路说明
+## 5. 自动部署链路说明
 
 当前部署工作流的实际顺序如下：
 
@@ -207,9 +224,9 @@ Cloudflare 官方关于 GitHub Actions 部署 Workers 的说明：
 
 ---
 
-## 5. 首次启用自动部署的操作步骤
+## 6. 首次启用自动部署的操作步骤
 
-### 5.1 确保本地已验证部署
+### 6.1 确保本地已验证部署
 
 在开启 GitHub 自动部署前，建议先本地完成：
 
@@ -224,21 +241,21 @@ Cloudflare 官方关于 GitHub Actions 部署 Workers 的说明：
 - `wrangler.jsonc` 中的 `database_id` 已写成真实远程 D1 ID
 - `client_apps` 表已有至少一条可用客户端记录
 
-### 5.2 提交工作流文件
+### 6.2 提交工作流文件
 
 确保以下文件已经提交到仓库：
 
-- [ci.yml](/I:/Sora/CloudConfig/.github/workflows/ci.yml)
-- [deploy.yml](/I:/Sora/CloudConfig/.github/workflows/deploy.yml)
+- [ci.yml](../.github/workflows/ci.yml)
+- [deploy.yml](../.github/workflows/deploy.yml)
 
-### 5.3 在 GitHub 添加 Secrets
+### 6.3 在 GitHub 添加 Secrets
 
 添加：
 
 - `CLOUDFLARE_API_TOKEN`
 - `CLOUDFLARE_ACCOUNT_ID`
 
-### 5.4 推送到 `main`
+### 6.4 推送到 `main`
 
 当代码推送到 `main` 后：
 
@@ -248,7 +265,7 @@ Cloudflare 官方关于 GitHub Actions 部署 Workers 的说明：
 
 ---
 
-## 6. 推荐的日常协作流程
+## 7. 推荐的日常协作流程
 
 建议使用以下流程：
 
@@ -266,7 +283,7 @@ Cloudflare 官方关于 GitHub Actions 部署 Workers 的说明：
 
 ---
 
-## 7. 如果你想区分测试环境和生产环境
+## 8. 如果你想区分测试环境和生产环境
 
 当前仓库只配置了一个生产部署工作流。
 
@@ -282,9 +299,9 @@ Cloudflare 官方关于 GitHub Actions 部署 Workers 的说明：
 
 ---
 
-## 8. 常见问题
+## 9. 常见问题
 
-### 8.1 GitHub Actions 提示 Cloudflare 鉴权失败
+### 9.1 GitHub Actions 提示 Cloudflare 鉴权失败
 
 重点检查：
 
@@ -292,15 +309,15 @@ Cloudflare 官方关于 GitHub Actions 部署 Workers 的说明：
 - `CLOUDFLARE_ACCOUNT_ID` 是否已配置
 - Token 是否具备 Workers 与 D1 相关权限
 
-### 8.2 部署阶段失败在 D1 迁移
+### 9.2 部署阶段失败在 D1 迁移
 
 重点检查：
 
-- [wrangler.jsonc](/I:/Sora/CloudConfig/wrangler.jsonc) 中 `database_id` 是否为真实值
+- [wrangler.jsonc](../wrangler.jsonc) 中 `database_id` 是否为真实值
 - 远程 D1 是否存在
 - 当前 Cloudflare 账号是否有访问该 D1 的权限
 
-### 8.3 `main` 推送后没有自动部署
+### 9.3 `main` 推送后没有自动部署
 
 重点检查：
 
@@ -309,7 +326,7 @@ Cloudflare 官方关于 GitHub Actions 部署 Workers 的说明：
 - 分支保护规则是否阻止了合并
 - `deploy.yml` 是否被禁用
 
-### 8.4 想手动重新部署
+### 9.4 想手动重新部署
 
 可以在 GitHub 仓库中打开：
 
@@ -323,7 +340,7 @@ workflow_dispatch:
 
 ---
 
-## 9. 当前 CI/CD 设计结论
+## 10. 当前 CI/CD 设计结论
 
 当前仓库已经采用以下规则：
 
