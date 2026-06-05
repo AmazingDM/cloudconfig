@@ -274,7 +274,9 @@ pnpm exec wrangler d1 execute DB --remote --command="select * from audit_logs wh
 
 ### 清空配置业务数据
 
-如果当前环境还没有大规模部署，且需要切换到按 `app_id + content_hash` 去重的新版本，可以在执行 `0002` 迁移前清空业务数据：
+`0002_app_scoped_config_dedupe.sql` 会在创建唯一索引前自动折叠旧库中的重复配置和重复短码关系：同一组 `app_id + content_hash` 只保留一条 `configs`，同一个 canonical `config_id` 只保留创建时间最早的一条 `config_shares`。
+
+如果当前环境还没有大规模部署，且不需要保留旧短码，也可以在执行 `0002` 迁移前清空业务数据：
 
 ```bash
 pnpm exec wrangler d1 execute DB --remote --command="delete from config_shares;"

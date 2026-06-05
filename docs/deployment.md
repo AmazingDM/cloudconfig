@@ -146,7 +146,7 @@ database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 
 ## 6. 执行 D1 迁移
 
-如果这是从早期版本升级且远程库里已有配置数据，请先按 [D1 结构说明](d1-schema.md#清空配置业务数据) 清空 `config_shares`、`configs` 和 `audit_logs`，再执行包含 `0002_app_scoped_config_dedupe.sql` 的迁移。
+如果这是从早期版本升级且远程库里已有配置数据，`0002_app_scoped_config_dedupe.sql` 会在创建唯一索引前自动折叠重复 `configs` 和重复 `config_shares`。不需要保留旧短码时，也可以先按 [D1 结构说明](d1-schema.md#清空配置业务数据) 清空 `config_shares`、`configs` 和 `audit_logs`。
 
 先执行本地迁移，便于后续本地开发验证：
 
