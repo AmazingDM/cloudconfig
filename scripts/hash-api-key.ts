@@ -1,6 +1,6 @@
-import { createHash } from 'node:crypto';
+import { createApiKeyHash } from '../src/common/api-key-hash';
 
-function main() {
+async function main() {
   const apiKey = process.argv[2];
 
   if (!apiKey) {
@@ -8,8 +8,11 @@ function main() {
     process.exit(1);
   }
 
-  const hash = createHash('sha256').update(apiKey).digest('hex');
+  const hash = await createApiKeyHash(apiKey);
   console.log(hash);
 }
 
-main();
+main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+});

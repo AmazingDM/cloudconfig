@@ -4,6 +4,13 @@
 
 ## [Unreleased]
 
+### 变更
+
+- 导出接口按 `app_id + content_hash` 精确去重，同一 app 重复导出相同配置会返回已有短码
+- 导入接口按 `app_id + shareCode` 查询，避免不同客户端应用之间共享短码
+- 导出接口增加 JSON 解析前的请求体大小限制 `MAX_EXPORT_REQUEST_BYTES`
+- API Key 哈希升级为 PBKDF2-SHA256，并兼容验证旧版 64 位 SHA-256 哈希
+
 ### 文档
 
 - 重写 README，补充项目结构、API Key 规则、快速启动和文档索引

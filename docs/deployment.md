@@ -127,7 +127,8 @@ database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
   "workers_dev": true,
   "vars": {
     "APP_NAME": "Cloud Config API",
-    "MAX_CONFIG_BYTES": "262144"
+    "MAX_CONFIG_BYTES": "262144",
+    "MAX_EXPORT_REQUEST_BYTES": "278528"
   }
 }
 ```
@@ -141,8 +142,11 @@ database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 | `workers_dev` | 是否启用默认 `workers.dev` 域名 |
 | `APP_NAME` | `GET /` 返回的服务名 |
 | `MAX_CONFIG_BYTES` | 单份配置 JSON 序列化后的最大字节数，默认 `262144`，即 `256KB` |
+| `MAX_EXPORT_REQUEST_BYTES` | 导出接口 JSON 解析前允许的最大请求体字节数，默认 `278528`，即 `272KB` |
 
 ## 6. 执行 D1 迁移
+
+如果这是从早期版本升级且远程库里已有配置数据，请先按 [D1 结构说明](d1-schema.md#清空配置业务数据) 清空 `config_shares`、`configs` 和 `audit_logs`，再执行包含 `0002_app_scoped_config_dedupe.sql` 的迁移。
 
 先执行本地迁移，便于后续本地开发验证：
 
@@ -178,8 +182,8 @@ configs
 重要规则：
 
 - 软件客户端请求头传明文 API Key。
-- D1 只保存明文 API Key 的 SHA-256 哈希。
-- Worker 会对请求头里的明文 API Key 再计算哈希并匹配数据库。
+- D1 只保存明文 API Key 的 PBKDF2-SHA256 哈希。
+- Worker 会读取 active 客户端应用，并用请求头里的明文 API Key 验证数据库中的哈希。
 
 ### 7.1 准备明文 API Key
 
@@ -207,8 +211,10 @@ pnpm hash:api-key desktop-client-prod-2026-05-05-001
 输出示例：
 
 ```text
-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+pbkdf2-sha256$210000$0123456789abcdef0123456789abcdef$0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 ```
+
+已有环境中旧版 64 位 SHA-256 哈希仍可继续验证，建议下一次轮换 API Key 时更新成上面的 PBKDF2-SHA256 格式。
 
 ### 7.3 插入客户端应用
 
@@ -477,10 +483,11 @@ pnpm exec wrangler d1 execute DB --remote --command="update client_apps set api_
 
 ### 接口返回 `40002`
 
-配置超过 `MAX_CONFIG_BYTES`。当前默认限制：
+导出请求体超过 `MAX_EXPORT_REQUEST_BYTES`，或配置正文超过 `MAX_CONFIG_BYTES`。当前默认限制：
 
 ```jsonc
-"MAX_CONFIG_BYTES": "262144"
+"MAX_CONFIG_BYTES": "262144",
+"MAX_EXPORT_REQUEST_BYTES": "278528"
 ```
 
 建议先减少客户端导出的配置范围，不要直接大幅提高限制。

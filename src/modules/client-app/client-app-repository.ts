@@ -1,31 +1,27 @@
 export type ClientAppRecord = {
   appId: string;
+  apiKeyHash: string;
 };
 
 export interface ClientAppRepository {
-  findActiveByApiKeyHash(apiKeyHash: string): Promise<ClientAppRecord | null>;
+  listActiveWithApiKeyHashes(): Promise<ClientAppRecord[]>;
 }
 
 export class D1ClientAppRepository implements ClientAppRepository {
   public constructor(private readonly db: D1Database) {}
 
-  public async findActiveByApiKeyHash(apiKeyHash: string): Promise<ClientAppRecord | null> {
-    const row = await this.db
+  public async listActiveWithApiKeyHashes(): Promise<ClientAppRecord[]> {
+    const result = await this.db
       .prepare(`
-        select app_id
+        select app_id, api_key_hash
         from client_apps
-        where api_key_hash = ? and status = 'active'
-        limit 1
+        where status = 'active'
       `)
-      .bind(apiKeyHash)
-      .first<{ app_id: string }>();
+      .all<{ app_id: string; api_key_hash: string }>();
 
-    if (!row) {
-      return null;
-    }
-
-    return {
-      appId: row.app_id
-    };
+    return result.results.map((row) => ({
+      appId: row.app_id,
+      apiKeyHash: row.api_key_hash
+    }));
   }
 }

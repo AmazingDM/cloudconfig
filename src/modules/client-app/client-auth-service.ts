@@ -1,5 +1,5 @@
 import { AppError, errorCodes } from '../../common/app-error';
-import { sha256Hex } from '../../common/hash';
+import { verifyApiKeyHash } from '../../common/api-key-hash';
 import type { ClientAppRepository } from './client-app-repository';
 
 export class ClientAuthService {
@@ -10,15 +10,15 @@ export class ClientAuthService {
       throw new AppError('缺少 x-api-key 请求头', 401, errorCodes.invalidApiKey);
     }
 
-    const apiKeyHash = await sha256Hex(apiKey);
-    const record = await this.repository.findActiveByApiKeyHash(apiKeyHash);
-
-    if (!record) {
-      throw new AppError('客户端鉴权失败', 401, errorCodes.invalidApiKey);
+    const records = await this.repository.listActiveWithApiKeyHashes();
+    for (const record of records) {
+      if (await verifyApiKeyHash(apiKey, record.apiKeyHash)) {
+        return {
+          appId: record.appId
+        };
+      }
     }
 
-    return {
-      appId: record.appId
-    };
+    throw new AppError('客户端鉴权失败', 401, errorCodes.invalidApiKey);
   }
 }

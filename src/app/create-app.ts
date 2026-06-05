@@ -3,7 +3,12 @@ import { Hono } from 'hono';
 import type { AppEnv } from './types';
 import { AppError, errorCodes } from '../common/app-error';
 import { success } from '../common/api-response';
-import { getClientIp, getMaxConfigBytes } from '../common/request';
+import {
+  getClientIp,
+  getMaxConfigBytes,
+  getMaxExportRequestBytes,
+  readJsonWithByteLimit
+} from '../common/request';
 import { D1AuditRepository } from '../modules/audit/audit-repository';
 import { ClientAuthService } from '../modules/client-app/client-auth-service';
 import { D1ClientAppRepository } from '../modules/client-app/client-app-repository';
@@ -77,12 +82,11 @@ export function createApp() {
   });
 
   app.post('/api/v1/config/export', async (c) => {
-    let body: unknown;
-    try {
-      body = await c.req.json();
-    } catch {
-      throw new AppError('请求体必须是合法 JSON', 400, errorCodes.badRequest);
-    }
+    const maxConfigBytes = getMaxConfigBytes(c.env.MAX_CONFIG_BYTES);
+    const body = await readJsonWithByteLimit(
+      c.req.raw,
+      getMaxExportRequestBytes(maxConfigBytes, c.env.MAX_EXPORT_REQUEST_BYTES)
+    );
 
     const services = createServices(c.env);
     const result = await services.configService.exportConfig({

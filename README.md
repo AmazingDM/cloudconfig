@@ -9,8 +9,10 @@ Cloud Config API 是一个基于 Cloudflare Workers + D1 的软件配置导入/�
 - `GET /health`：检查 Worker 与 D1 是否可用。
 - `POST /api/v1/config/export`：导出配置并生成分享短码。
 - `POST /api/v1/config/import`：通过分享短码导入配置。
-- `x-api-key` 静态鉴权：请求头传明文 API Key，服务端计算 SHA-256 后匹配 D1 中的 `client_apps.api_key_hash`。
+- `x-api-key` 静态鉴权：请求头传明文 API Key，服务端用 PBKDF2-SHA256 验证 D1 中的 `client_apps.api_key_hash`。
 - 配置大小限制：默认 `256KB`，由 `wrangler.jsonc` 中的 `MAX_CONFIG_BYTES` 控制。
+- 导出请求体限制：默认 `272KB`，由 `MAX_EXPORT_REQUEST_BYTES` 控制，在 JSON 解析前拒绝明显超大的导出请求。
+- app 内配置去重：同一 `app_id` 下相同 `JSON.stringify(config)` 文本返回已有短码，不重复保存配置正文。
 - 数据落地：D1 保存配置正文、短码映射、客户端应用和审计日志。
 
 ## 技术栈
@@ -97,7 +99,7 @@ curl http://127.0.0.1:8787/health
 2. 创建 D1 数据库。
 3. 将 D1 `database_id` 写入 `wrangler.jsonc`。
 4. 执行 D1 远程迁移。
-5. 生成 API Key 的 SHA-256 哈希。
+5. 生成 API Key 的 PBKDF2-SHA256 哈希。
 6. 向 `client_apps` 表插入客户端应用。
 7. 部署 Worker。
 8. 使用接口调用示例验证 `/health`、导出和导入。
@@ -110,13 +112,15 @@ curl http://127.0.0.1:8787/health
 x-api-key: your-plain-api-key
 ```
 
-D1 中保存的是该明文的 SHA-256 哈希：
+D1 中保存的是该明文的 PBKDF2-SHA256 哈希：
 
 ```bash
 pnpm hash:api-key your-plain-api-key
 ```
 
 不要把数据库里的哈希值当作 `x-api-key` 传给接口，除非你一开始就把这个哈希字符串本身当作明文 API Key 生成过哈希。
+
+新生成的哈希格式为 `pbkdf2-sha256$迭代次数$salt$hash`。Worker 仍可验证旧版 64 位 SHA-256 哈希，便于已有环境平滑轮换到新格式。
 
 ## 调用示例
 

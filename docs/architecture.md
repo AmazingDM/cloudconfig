@@ -63,9 +63,11 @@ POST /api/v1/config/export
   -> JSON.stringify(config)
   -> 计算字节长度
   -> 超过 MAX_CONFIG_BYTES 则拒绝
-  -> 写入 configs
-  -> 生成 16 位短码
-  -> 写入 config_shares
+  -> 计算 content_hash
+  -> 按 app_id + content_hash 查询已有配置和短码
+  -> 已存在则返回旧 configId + shareCode
+  -> 不存在则写入 configs(app_id, content_json, content_hash)
+  -> 生成 16 位短码并写入 config_shares
   -> 写入 audit_logs(config.export)
   -> 返回 configId + shareCode
 ```
@@ -77,7 +79,7 @@ POST /api/v1/config/import
   -> 校验 x-api-key
   -> 解析 JSON 请求体
   -> 校验 shareCode 格式
-  -> 查询 config_shares + configs
+  -> 按 app_id + shareCode 查询 config_shares + configs
   -> 校验 share status / expires_at
   -> JSON.parse(content_json)
   -> config_shares.access_count + 1
@@ -94,7 +96,8 @@ POST /api/v1/config/import
 | `src/app/types.ts` | Worker bindings 和 Hono variables 类型 |
 | `src/common/api-response.ts` | 统一成功响应 |
 | `src/common/app-error.ts` | 应用错误和业务错误码 |
-| `src/common/hash.ts` | SHA-256 哈希工具 |
+| `src/common/hash.ts` | 配置内容 SHA-256 哈希工具 |
+| `src/common/api-key-hash.ts` | API Key PBKDF2-SHA256 哈希生成与验证 |
 | `src/common/request.ts` | IP 和配置大小读取 |
 | `src/modules/client-app/*` | 客户端 API Key 鉴权 |
 | `src/modules/config/*` | 配置导出/导入业务和 D1 访问 |
@@ -106,8 +109,8 @@ POST /api/v1/config/import
 ```text
 client_apps
   | app_id
-  v
-audit_logs.app_id
+  |-- configs.app_id
+  `-- audit_logs.app_id
 
 configs.id
   ^
@@ -119,8 +122,8 @@ config_shares.config_id
 
 | 表 | 职责 |
 | --- | --- |
-| `configs` | 保存完整配置 JSON 文本、内容哈希和字节大小 |
-| `config_shares` | 保存短码、配置映射、状态、过期时间和访问次数 |
+| `configs` | 保存 app 归属、完整配置 JSON 文本、内容哈希和字节大小 |
+| `config_shares` | 保存 canonical 短码、配置映射、状态、过期时间和访问次数 |
 | `client_apps` | 保存客户端应用和 API Key 哈希 |
 | `audit_logs` | 记录导出/导入动作、请求 ID、客户端、IP 和元数据 |
 
@@ -135,17 +138,17 @@ x-api-key: 明文 API Key
 服务端处理：
 
 1. 读取请求头。
-2. 计算 SHA-256 十六进制哈希。
-3. 查询 `client_apps`：
+2. 读取 active 客户端应用及其哈希。
+3. 用明文 API Key 逐条验证 PBKDF2-SHA256 哈希：
 
 ```sql
-select app_id
+select app_id, api_key_hash
 from client_apps
-where api_key_hash = ? and status = 'active'
-limit 1;
+where status = 'active';
 ```
 
 这种设计避免 D1 保存明文 API Key，但它仍然是静态密钥机制。生产环境应为不同客户端、渠道和环境分配不同密钥。
+旧版 64 位 SHA-256 哈希仍可验证，用于升级期兼容；新客户端应用和轮换后的密钥应使用 `pnpm hash:api-key` 生成的 PBKDF2-SHA256 格式。
 
 ## 短码设计
 
@@ -154,12 +157,14 @@ limit 1;
 - 长度固定 16。
 - 字符范围为 `A-Z` 和 `a-z`。
 - 写入 `config_shares.short_code` 时由唯一索引兜底。
+- 同一个 `app_id` 下，相同 `JSON.stringify(config)` 文本只保留一份 `configs` 和一个 canonical 短码。
+- 不同 `app_id` 即使配置文本相同，也会生成彼此隔离的配置和短码。
 - 发生唯一约束冲突时最多重试 5 次。
 - 当前默认不过期，`expires_at` 保留给后续扩展。
 
 ## 配置大小限制
 
-导出接口不会按原始请求体大小判断，而是先对 `body.config` 执行 `JSON.stringify`，再计算 UTF-8 字节长度。
+导出接口会先限制整个请求体大小，再对 `body.config` 执行 `JSON.stringify`，计算配置正文的 UTF-8 字节长度。
 
 默认上限来自 `wrangler.jsonc`：
 
@@ -168,6 +173,14 @@ limit 1;
 ```
 
 也就是 `256KB`。
+
+导出接口还会在 JSON 解析前检查整个请求体大小，默认来自：
+
+```jsonc
+"MAX_EXPORT_REQUEST_BYTES": "278528"
+```
+
+也就是 `272KB`，用于给 `config` 外层 envelope 和 `metadata` 留出空间。这个限制只能减少明显超大请求进入 JSON 解析，不能减少客户端上传完整配置的网络成本。
 
 ## 错误处理
 
@@ -188,6 +201,7 @@ limit 1;
 
 - 首版只支持导出和导入，不支持更新、删除、列表查询。
 - 配置内容原样作为 JSON 文本保存，服务端不理解具体业务字段。
+- 配置去重按 `app_id + SHA-256(JSON.stringify(config))` 精确匹配，不做 JSON 字段排序或语义归一化。
 - 客户端负责决定导入后覆盖、合并还是提示用户选择。
 - 静态 API Key 适合客户端到服务端的轻量鉴权，不等同于用户级权限系统。
 - D1 中保存完整配置正文，不应存储长期高敏感凭据。

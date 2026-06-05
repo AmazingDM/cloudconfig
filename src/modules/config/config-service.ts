@@ -20,7 +20,31 @@ const importConfigSchema = z.object({
 
 function isUniqueConstraintError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return message.includes('UNIQUE constraint failed') && message.includes('config_shares.short_code');
+  return message.includes('UNIQUE constraint failed');
+}
+
+function isShortCodeUniqueConstraintError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return isUniqueConstraintError(error) && message.includes('config_shares.short_code');
+}
+
+function isConfigHashUniqueConstraintError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return isUniqueConstraintError(error)
+    && (
+      message.includes('configs.app_id')
+      || message.includes('configs.content_hash')
+      || message.includes('idx_configs_app_hash_unique')
+    );
+}
+
+function isShareConfigUniqueConstraintError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return isUniqueConstraintError(error)
+    && (
+      message.includes('config_shares.config_id')
+      || message.includes('idx_config_shares_config_id_unique')
+    );
 }
 
 export class ConfigService {
@@ -52,34 +76,51 @@ export class ConfigService {
       throw new AppError('配置内容超过允许大小', 400, errorCodes.configTooLarge);
     }
 
-    const configId = crypto.randomUUID();
-    await this.repository.insertConfig({
-      id: configId,
+    const contentHash = await sha256Hex(contentJson);
+    const existingShare = await this.repository.findShareByAppIdAndContentHash(input.appId, contentHash);
+    if (existingShare) {
+      await this.insertExportAudit({
+        appId: input.appId,
+        requestId: input.requestId,
+        ip: input.ip,
+        configId: existingShare.config.id,
+        shareCode: existingShare.share.shortCode,
+        contentSize,
+        metadata: parsed.data.metadata ?? null,
+        deduplicated: true,
+        reusedShareCode: true
+      });
+
+      return {
+        configId: existingShare.config.id,
+        shareCode: existingShare.share.shortCode
+      };
+    }
+
+    const config = await this.insertConfigOrReuse({
+      appId: input.appId,
       contentJson,
-      contentHash: await sha256Hex(contentJson),
+      contentHash,
       contentSize
     });
 
-    const shareId = crypto.randomUUID();
-    const shareCode = await this.createShareWithRetry(configId, shareId, 5);
+    const share = await this.createShareWithRetry(config.configId, 5);
 
-    await this.auditRepository.insertLog({
+    await this.insertExportAudit({
       appId: input.appId,
-      action: 'config.export',
       requestId: input.requestId,
       ip: input.ip,
-      resourceType: 'config',
-      resourceId: configId,
-      metadata: {
-        shareCode,
-        contentSize,
-        metadata: parsed.data.metadata ?? null
-      }
+      configId: config.configId,
+      shareCode: share.shareCode,
+      contentSize,
+      metadata: parsed.data.metadata ?? null,
+      deduplicated: config.reused || share.reused,
+      reusedShareCode: share.reused
     });
 
     return {
-      configId,
-      shareCode
+      configId: config.configId,
+      shareCode: share.shareCode
     };
   }
 
@@ -94,7 +135,7 @@ export class ConfigService {
       throw new AppError('请求参数无效', 400, errorCodes.badRequest);
     }
 
-    const record = await this.repository.findShareByShortCode(parsed.data.shareCode);
+    const record = await this.repository.findShareByAppIdAndShortCode(input.appId, parsed.data.shareCode);
     if (!record || record.share.status !== 'active') {
       throw new AppError('分享短码无效或已失效', 404, errorCodes.invalidShareCode);
     }
@@ -125,8 +166,61 @@ export class ConfigService {
     };
   }
 
-  private async createShareWithRetry(configId: string, shareId: string, maxRetries: number): Promise<string> {
+  private async insertConfigOrReuse(input: {
+    appId: string;
+    contentJson: string;
+    contentHash: string;
+    contentSize: number;
+  }): Promise<{
+    configId: string;
+    reused: boolean;
+  }> {
+    const configId = crypto.randomUUID();
+
+    try {
+      await this.repository.insertConfig({
+        id: configId,
+        appId: input.appId,
+        contentJson: input.contentJson,
+        contentHash: input.contentHash,
+        contentSize: input.contentSize
+      });
+
+      return {
+        configId,
+        reused: false
+      };
+    } catch (error) {
+      if (!isConfigHashUniqueConstraintError(error)) {
+        throw error;
+      }
+
+      const existing = await this.repository.findConfigByAppIdAndContentHash(input.appId, input.contentHash);
+      if (!existing) {
+        throw error;
+      }
+
+      return {
+        configId: existing.id,
+        reused: true
+      };
+    }
+  }
+
+  private async createShareWithRetry(configId: string, maxRetries: number): Promise<{
+    shareCode: string;
+    reused: boolean;
+  }> {
+    const existingShare = await this.repository.findShareByConfigId(configId);
+    if (existingShare) {
+      return {
+        shareCode: existingShare.shortCode,
+        reused: true
+      };
+    }
+
     for (let attempt = 0; attempt < maxRetries; attempt += 1) {
+      const shareId = crypto.randomUUID();
       const shortCode = generateShortCode();
 
       try {
@@ -139,14 +233,55 @@ export class ConfigService {
           expiresAt: null
         });
 
-        return shortCode;
+        return {
+          shareCode: shortCode,
+          reused: false
+        };
       } catch (error) {
-        if (!isUniqueConstraintError(error) || attempt === maxRetries - 1) {
+        if (isShareConfigUniqueConstraintError(error)) {
+          const existing = await this.repository.findShareByConfigId(configId);
+          if (existing) {
+            return {
+              shareCode: existing.shortCode,
+              reused: true
+            };
+          }
+        }
+
+        if (!isShortCodeUniqueConstraintError(error) || attempt === maxRetries - 1) {
           throw error;
         }
       }
     }
 
     throw new AppError('分享短码生成失败', 500, errorCodes.internalError);
+  }
+
+  private async insertExportAudit(input: {
+    appId: string;
+    requestId: string;
+    ip: string;
+    configId: string;
+    shareCode: string;
+    contentSize: number;
+    metadata: Record<string, unknown> | null;
+    deduplicated: boolean;
+    reusedShareCode: boolean;
+  }): Promise<void> {
+    await this.auditRepository.insertLog({
+      appId: input.appId,
+      action: 'config.export',
+      requestId: input.requestId,
+      ip: input.ip,
+      resourceType: 'config',
+      resourceId: input.configId,
+      metadata: {
+        shareCode: input.shareCode,
+        contentSize: input.contentSize,
+        deduplicated: input.deduplicated,
+        reusedShareCode: input.reusedShareCode,
+        metadata: input.metadata
+      }
+    });
   }
 }

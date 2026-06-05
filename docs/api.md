@@ -35,9 +35,10 @@ content-type: application/json
 注意：
 
 - `x-api-key` 传明文 API Key。
-- D1 的 `client_apps.api_key_hash` 保存的是该明文 API Key 的 SHA-256 哈希。
-- Worker 收到请求后会自动计算 `x-api-key` 的 SHA-256 哈希，再查找 `status = 'active'` 的客户端应用。
-- 不要把数据库中的哈希值直接当作 `x-api-key`，否则会再次被哈希，导致鉴权失败。
+- D1 的 `client_apps.api_key_hash` 保存的是该明文 API Key 的 PBKDF2-SHA256 哈希。
+- Worker 收到请求后会读取 `status = 'active'` 的客户端应用，并用 `x-api-key` 逐条验证哈希。
+- 不要把数据库中的哈希值直接当作 `x-api-key`，否则会按明文再次验证，导致鉴权失败。
+- Worker 仍兼容旧版 64 位 SHA-256 哈希，建议已有环境逐步轮换成 `pbkdf2-sha256$迭代次数$salt$hash` 格式。
 
 生成哈希：
 
@@ -83,7 +84,7 @@ pnpm hash:api-key your-plain-api-key
 | HTTP 状态 | 业务码 | 场景 | 常见处理 |
 | --- | ---: | --- | --- |
 | `400` | `40000` | 请求体不是合法 JSON，或字段格式不符合要求 | 检查 JSON 和字段名 |
-| `400` | `40002` | 配置 JSON 序列化后超过 `MAX_CONFIG_BYTES` | 压缩配置或调低导出范围 |
+| `400` | `40002` | 导出请求体超过 `MAX_EXPORT_REQUEST_BYTES`，或配置 JSON 序列化后超过 `MAX_CONFIG_BYTES` | 压缩配置或调低导出范围 |
 | `401` | `40101` | 缺少或错误的 `x-api-key` | 确认传的是明文 API Key |
 | `404` | `40400` | 路由不存在 | 检查 URL |
 | `404` | `40401` | 短码不存在、非 active 或已过期 | 提示用户重新导出 |
@@ -139,6 +140,8 @@ curl https://your-worker-url/health
 ## POST /api/v1/config/export
 
 导出客户端当前配置，并返回可分享短码。
+
+同一个 `app_id` 下，相同 `JSON.stringify(config)` 文本会返回已有 `configId` 和 `shareCode`，不会重复生成配置正文或新短码。`app_id` 来自 `x-api-key` 对应的客户端应用，不读取请求体字段。
 
 ### 请求体
 
@@ -261,6 +264,8 @@ export async function exportConfig(baseUrl: string, apiKey: string, config: unkn
 ## POST /api/v1/config/import
 
 根据短码导入完整配置。
+
+短码按 `app_id` 隔离。请求使用的 `x-api-key` 必须属于创建该短码的客户端应用，否则会按无效短码处理。
 
 ### 请求体
 

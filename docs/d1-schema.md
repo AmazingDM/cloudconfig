@@ -4,6 +4,7 @@
 
 ```text
 migrations/0001_init.sql
+migrations/0002_app_scoped_config_dedupe.sql
 ```
 
 当前 Worker 通过 `wrangler.jsonc` 中的 D1 binding `DB` 访问数据库。
@@ -16,7 +17,7 @@ configs.id
   `-- config_shares.config_id
 
 client_apps.app_id
-  |
+  |-- configs.app_id
   `-- audit_logs.app_id
 ```
 
@@ -29,6 +30,7 @@ client_apps.app_id
 ```sql
 create table if not exists configs (
   id text primary key,
+  app_id text not null,
   content_json text not null,
   content_hash text not null,
   content_size integer not null,
@@ -41,14 +43,24 @@ create table if not exists configs (
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `id` | text | 配置主键，Worker 使用 UUID |
+| `app_id` | text | 配置所属客户端应用，来自 `x-api-key` 鉴权结果 |
 | `content_json` | text | `body.config` 标准序列化后的 JSON 文本 |
 | `content_hash` | text | `content_json` 的 SHA-256 十六进制摘要 |
 | `content_size` | integer | `content_json` 的 UTF-8 字节长度 |
 | `created_at` | text | 创建时间 |
 
+唯一约束：
+
+```sql
+create unique index if not exists idx_configs_app_hash_unique
+on configs(app_id, content_hash);
+```
+
 写入时机：
 
 - `POST /api/v1/config/export`
+
+同一个 `app_id` 下，相同 `content_hash` 只保存一条 `configs`。不同 `app_id` 的相同配置不会共享。
 
 ## config_shares
 
@@ -86,11 +98,14 @@ create table if not exists config_shares (
 ```sql
 create index if not exists idx_config_shares_config_id on config_shares(config_id);
 create index if not exists idx_config_shares_status on config_shares(status);
+create unique index if not exists idx_config_shares_config_id_unique on config_shares(config_id);
 ```
 
 写入时机：
 
 - `POST /api/v1/config/export`
+
+同一个 `config_id` 只会有一个 canonical 短码；重复导出相同配置会返回旧短码。
 
 更新时机：
 
@@ -119,7 +134,7 @@ create table if not exists client_apps (
 | --- | --- | --- |
 | `app_id` | text | 客户端应用标识，例如 `desktop-client` |
 | `app_name` | text | 客户端展示名称 |
-| `api_key_hash` | text | 明文 API Key 的 SHA-256 十六进制哈希 |
+| `api_key_hash` | text | 明文 API Key 的 PBKDF2-SHA256 哈希；旧 64 位 SHA-256 十六进制哈希仅用于兼容 |
 | `status` | text | `active` 才允许调用业务接口 |
 | `created_at` | text | 创建时间 |
 | `updated_at` | text | 更新时间 |
@@ -133,10 +148,9 @@ create index if not exists idx_client_apps_status on client_apps(status);
 鉴权查询：
 
 ```sql
-select app_id
+select app_id, api_key_hash
 from client_apps
-where api_key_hash = ? and status = 'active'
-limit 1;
+where status = 'active';
 ```
 
 ## audit_logs
@@ -257,6 +271,18 @@ pnpm exec wrangler d1 execute DB --remote --command="select action, app_id, requ
 ```bash
 pnpm exec wrangler d1 execute DB --remote --command="select * from audit_logs where request_id='替换为响应里的 requestId';"
 ```
+
+### 清空配置业务数据
+
+如果当前环境还没有大规模部署，且需要切换到按 `app_id + content_hash` 去重的新版本，可以在执行 `0002` 迁移前清空业务数据：
+
+```bash
+pnpm exec wrangler d1 execute DB --remote --command="delete from config_shares;"
+pnpm exec wrangler d1 execute DB --remote --command="delete from configs;"
+pnpm exec wrangler d1 execute DB --remote --command="delete from audit_logs;"
+```
+
+这条命令会保留 `client_apps`，因此现有 API Key 仍可继续使用。如果要连 API Key 一起重建，再额外清空 `client_apps` 并重新插入客户端应用。
 
 ## 迁移原则
 

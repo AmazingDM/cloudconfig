@@ -15,7 +15,7 @@ CloudConfigApiKey=your-plain-api-key
 
 - `CloudConfigBaseUrl` 是 Worker 部署后的地址，不带结尾 `/` 也可以。
 - `CloudConfigApiKey` 是明文 API Key。
-- D1 里保存的是该明文 API Key 的 SHA-256 哈希，不是客户端要传的值。
+- D1 里保存的是该明文 API Key 的 PBKDF2-SHA256 哈希，不是客户端要传的值。
 
 ## 2. 导出流程
 
@@ -24,7 +24,7 @@ CloudConfigApiKey=your-plain-api-key
 1. 用户点击“导出配置”。
 2. 客户端读取当前本地配置。
 3. 客户端调用 `POST /api/v1/config/export`。
-4. 成功后展示 `shareCode`。
+4. 成功后展示 `shareCode`。同一个 `app_id` 下重复导出相同配置时，服务端会返回已有短码。
 5. 用户复制短码，或把短码输入到另一台设备。
 
 接口返回的 `configId` 可以用于日志排查，不需要展示给普通用户。
@@ -40,7 +40,7 @@ CloudConfigApiKey=your-plain-api-key
 5. 客户端拿到 `config`。
 6. 客户端提示用户确认覆盖，或按自身策略合并本地配置。
 
-导入接口只返回 JSON 配置正文，不会决定客户端如何落盘。
+导入接口只返回 JSON 配置正文，不会决定客户端如何落盘。短码按 API Key 对应的 `app_id` 隔离，不能用一个客户端应用的 API Key 导入另一个客户端应用生成的短码。
 
 ## 4. TypeScript 示例
 
@@ -277,7 +277,7 @@ Invoke-RestMethod `
 | code | 客户端提示 |
 | ---: | --- |
 | `40000` | 配置数据格式不正确，请升级客户端或重试 |
-| `40002` | 配置太大，请减少导出内容 |
+| `40002` | 导出请求体或配置正文太大，请减少导出内容 |
 | `40101` | 当前客户端未授权，请检查服务配置 |
 | `40401` | 短码无效或已失效，请重新导出 |
 | `50000` | 服务暂时不可用，请稍后重试 |
@@ -305,7 +305,7 @@ Invoke-RestMethod `
 
 - 客户端 Base URL 配置正确。
 - 客户端传的是明文 API Key。
-- D1 中保存的是明文 API Key 的 SHA-256 哈希。
+- D1 中保存的是明文 API Key 的 PBKDF2-SHA256 哈希。
 - 导出接口能返回 `shareCode`。
 - 导入接口能按 `shareCode` 返回完整 `config`。
 - 错误 API Key 会得到 `40101`。
