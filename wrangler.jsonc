@@ -3,7 +3,8 @@
   "name": "cloud-config-api",
   "main": "src/index.ts",
   "compatibility_date": "2026-04-04",
-  "workers_dev": true,
+  "workers_dev": false,
+  "preview_urls": false,
   "vars": {
     "APP_NAME": "Cloud Config API",
     "MAX_CONFIG_BYTES": "262144",
